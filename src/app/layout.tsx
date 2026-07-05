@@ -7,8 +7,8 @@ export const dynamic = 'force-dynamic'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'Control de Pagos — Tutor ISAM',
-  description: 'Sistema de control de pagos y seguimiento académico para el tutor asesor',
+  title: 'Control de Pagos - Tutor',
+  description: 'Sistema de control de pagos y seguimiento académico',
 }
 
 export default function RootLayout({
