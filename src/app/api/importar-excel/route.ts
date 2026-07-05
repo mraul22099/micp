@@ -1,6 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
 import { parseExcelBuffer } from '@/lib/excel-parser'
-import { parseCuotas } from '@/lib/excel-parser'
 import { NextResponse } from 'next/server'
 
 export async function POST(request: Request) {
@@ -23,80 +22,99 @@ export async function POST(request: Request) {
     const buffer = await file.arrayBuffer()
     const { rows, total } = await parseExcelBuffer(buffer)
 
-    let nuevos = 0
-    let actualizados = 0
+    let procesados = 0
     let errores = 0
     const start = Date.now()
 
-    // Procesar en lotes para no saturar
-    const batchSize = 100
+    // Procesar en lotes de 50
+    const batchSize = 50
     for (let i = 0; i < rows.length; i += batchSize) {
       const batch = rows.slice(i, i + batchSize)
       
       for (const row of batch) {
         try {
-          // Upsert Alumno
-          const { data: alumnoData, error: alumnoError } = await supabase
+          const { error: upsertError } = await supabase
             .from('alumnos')
             .upsert({
               dni: row.dni,
               grupo: row.grupo,
-              nombre: row.nombre,
-              paterno: row.paterno,
-              materno: row.materno,
-              celular: row.celular,
-              email: row.email,
+              persona: row.persona,
+              alumno_codigo: row.alumno_codigo,
+              codigo_pago: row.codigo_pago,
+              estructura: row.estructura,
+              semestre: row.semestre,
+              nombre_completo: row.nombre_completo,
+              sede: row.sede,
               carrera: row.carrera,
-              turno: row.turno,
-              horario: row.horario,
-              frecuencia: row.frecuencia,
-              local: row.local,
-              fecha_inicio: row.fecha_inicio,
-              fecha_inscripcion: row.fecha_inscripcion,
-              estado_matricula: row.estado_matricula,
-              nota_final: row.nota_final,
-              promocion: row.promocion,
-              nro_inscripcion: row.nro_inscripcion,
-              monto_inscripcion: row.monto_inscripcion,
-              tipo_pago_inscripcion: row.tipo_pago_inscripcion,
-              fecha_pago_inscripcion: row.fecha_pago_inscripcion,
-              nro_matricula: row.nro_matricula,
-              monto_matricula: row.monto_matricula,
-              tipo_pago_matricula: row.tipo_pago_matricula,
-              fecha_pago_matricula: row.fecha_pago_matricula,
-              total_pagado_cuotas: row.total_pagado_cuotas,
-              deuda_total: row.deuda_total,
+              programa: row.programa,
+              ciclo: row.ciclo,
+              seccion: row.seccion,
+              nota_1: row.nota_1,
+              nota_2: row.nota_2,
+              nota_3: row.nota_3,
+              nota_4: row.nota_4,
+              nota_5: row.nota_5,
+              nota_6: row.nota_6,
+              nota_7: row.nota_7,
+              nota_8: row.nota_8,
+              nota_9: row.nota_9,
+              nota_10: row.nota_10,
+              nota_11: row.nota_11,
+              nota_12: row.nota_12,
+              mat_boleta: row.mat_boleta,
+              mat_fecha: row.mat_fecha,
+              mat_importe: row.mat_importe,
+              c1_boleta: row.c1_boleta,
+              c1_fecha: row.c1_fecha,
+              c1_importe: row.c1_importe,
+              c2_boleta: row.c2_boleta,
+              c2_fecha: row.c2_fecha,
+              c2_importe: row.c2_importe,
+              c3_boleta: row.c3_boleta,
+              c3_fecha: row.c3_fecha,
+              c3_importe: row.c3_importe,
+              c4_boleta: row.c4_boleta,
+              c4_fecha: row.c4_fecha,
+              c4_importe: row.c4_importe,
+              c5_boleta: row.c5_boleta,
+              c5_fecha: row.c5_fecha,
+              c5_importe: row.c5_importe,
+              xcico_boleta: row.xcico_boleta,
+              xcico_fecha: row.xcico_fecha,
+              xcico_importe: row.xcico_importe,
+              rati_boleta: row.rati_boleta,
+              rati_fecha: row.rati_fecha,
+              rati_importe: row.rati_importe,
+              email: row.email,
+              telefono: row.telefono,
+              celular: row.celular,
+              direccion: row.direccion,
+              ubigeo: row.ubigeo,
+              escala: row.escala,
+              observacion_excel: row.observacion_excel,
+              curricula: row.curricula,
+              descripcion_grupo: row.descripcion_grupo,
+              fecha_matricula: row.fecha_matricula,
+              matriculado: row.matriculado,
+              categoria: row.categoria,
+              importe_total: row.importe_total,
+              total_pagado: row.total_pagado,
+              deuda: row.deuda,
+              ven_1: row.ven_1,
+              ven_2: row.ven_2,
+              ven_3: row.ven_3,
+              ven_4: row.ven_4,
+              ven_5: row.ven_5,
+              deuda_1: row.deuda_1,
+              deuda_2: row.deuda_2,
+              deuda_3: row.deuda_3,
+              deuda_4: row.deuda_4,
+              deuda_5: row.deuda_5,
               ultima_importacion: new Date().toISOString()
             }, { onConflict: 'dni,grupo' })
-            .select('id')
-            .single()
 
-          if (alumnoError) throw alumnoError
-          
-          actualizados++ // Simplificación: asumimos actualizados si upsert pasa. Supabase no retorna status exacto de insert/update en JS simple
-
-          // Procesar Cuotas
-          if (alumnoData?.id) {
-            const cuotasParsed = parseCuotas(row.cuotas_programadas_raw, row.cuotas_pagadas_raw)
-            if (cuotasParsed.length > 0) {
-              // Borrar anteriores
-              await supabase.from('cuotas').delete().eq('alumno_id', alumnoData.id)
-              // Insertar nuevas
-              const cuotasToInsert = cuotasParsed.map(c => ({
-                alumno_id: alumnoData.id,
-                nro_cuota: c.nro_cuota,
-                fecha_programada: c.fecha_programada,
-                monto_programado: c.monto_programado,
-                monto_pagado: c.monto_pagado,
-                nro_recibo: c.nro_recibo,
-                tipo_pago: c.tipo_pago,
-                fecha_pago: c.fecha_pago,
-                estado: (c.monto_pagado >= c.monto_programado && c.monto_programado > 0) ? 'pagado' :
-                        (c.fecha_programada && new Date(c.fecha_programada) < new Date()) ? 'vencido' : 'pendiente'
-              }))
-              await supabase.from('cuotas').insert(cuotasToInsert)
-            }
-          }
+          if (upsertError) throw upsertError
+          procesados++
         } catch (e) {
           console.error(`Error procesando DNI ${row.dni}:`, e)
           errores++
@@ -110,14 +128,14 @@ export async function POST(request: Request) {
     await supabase.from('importaciones').insert({
       nombre_archivo: file.name,
       total_filas: total,
-      actualizados: actualizados,
+      actualizados: procesados,
       errores: errores,
       duracion_ms: duracion_ms
     })
 
     return NextResponse.json({
       success: true,
-      result: { total, actualizados, errores, duracion_ms }
+      result: { total, procesados, errores, duracion_ms }
     })
 
   } catch (error: any) {

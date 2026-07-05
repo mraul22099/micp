@@ -1,170 +1,149 @@
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
-import { formatCurrency, getEstadoColor, getNombreCompleto, getRiesgoColor } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
 
 export default async function DashboardPage() {
   const supabase = createClient()
   
-  // 1. Obtener todos los alumnos del tutor
-  const { data: alumnos, error } = await supabase
-    .from('vista_mis_alumnos')
-    .select('*')
-    
-  if (error) {
-    console.error('Error fetching dashboard:', error)
+  // Contar alumnos totales importados
+  const { count: totalAlumnos } = await supabase
+    .from('alumnos')
+    .select('*', { count: 'exact', head: true })
+
+  // Contar mis alumnos
+  const { count: totalMisAlumnos } = await supabase
+    .from('mis_alumnos')
+    .select('*', { count: 'exact', head: true })
+
+  // Obtener mis alumnos con datos
+  const { data: misAlumnosData } = await supabase
+    .from('mis_alumnos')
+    .select('dni, grupo')
+
+  let alumnosConDeuda = 0
+  let deudaTotal = 0
+  let semestre = ''
+
+  if (misAlumnosData && misAlumnosData.length > 0) {
+    const dnis = misAlumnosData.map(m => m.dni)
+    const { data: alumnosInfo } = await supabase
+      .from('alumnos')
+      .select('deuda, semestre')
+      .in('dni', dnis)
+
+    if (alumnosInfo) {
+      alumnosInfo.forEach(a => {
+        if (a.deuda && a.deuda < 0) {
+          alumnosConDeuda++
+          deudaTotal += Math.abs(a.deuda)
+        }
+        if (a.semestre && !semestre) semestre = a.semestre
+      })
+    }
   }
 
-  const list = alumnos || []
-  
-  // Calcular métricas
-  const totalAlumnos = list.length
-  const alDia = list.filter(a => a.deuda_total <= 0).length
-  const conDeuda = list.filter(a => a.deuda_total > 0).length
-  const riesgoAlto = list.filter(a => a.riesgo_academico === 'alto').length
-
-  // Agrupar por grupo para mostrar la lista de grupos
-  const gruposMap = new Map<string, number>()
-  list.forEach(a => {
-    gruposMap.set(a.grupo, (gruposMap.get(a.grupo) || 0) + 1)
-  })
-  const grupos = Array.from(gruposMap.entries()).map(([nombre, total]) => ({ nombre, total }))
-  
-  // Alertas (deudores o riesgo alto sin contactar)
-  const alertas = list.filter(a => 
-    (a.deuda_total > 0 && a.estado_seguimiento === 'sin_contactar') || 
-    (a.riesgo_academico === 'alto')
-  ).slice(0, 5) // Mostrar máximo 5
+  // Última importación
+  const { data: ultimaImport } = await supabase
+    .from('importaciones')
+    .select('*')
+    .order('fecha', { ascending: false })
+    .limit(1)
+    .single()
 
   return (
-    <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-6">
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+    <div className="p-4 md:p-8 max-w-6xl mx-auto space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-3xl font-bold text-white tracking-tight">Dashboard</h1>
-          <p className="text-slate-400 mt-1">Resumen general de tus grupos asignados.</p>
+          <h1 className="text-2xl md:text-3xl font-bold text-white tracking-tight">Dashboard</h1>
+          <p className="text-slate-400 text-sm mt-1">
+            Vista general del sistema
+            {semestre && <span className="ml-2 text-indigo-400 font-medium">· Semestre {semestre}</span>}
+          </p>
         </div>
       </div>
 
-      {/* Tarjetas de métricas */}
+      {/* Cards resumen */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="card p-5">
-          <div className="flex items-center gap-3 text-slate-400 mb-2">
-            <svg className="w-5 h-5 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-            </svg>
-            <h3 className="text-sm font-medium">Total Alumnos</h3>
-          </div>
-          <p className="text-3xl font-bold text-white">{totalAlumnos}</p>
+          <p className="text-xs text-slate-500 uppercase tracking-wider font-medium">Alumnos Importados</p>
+          <p className="text-3xl font-bold text-white mt-2">{totalAlumnos || 0}</p>
+          <p className="text-xs text-slate-500 mt-1">del Excel</p>
         </div>
-        
         <div className="card p-5">
-          <div className="flex items-center gap-3 text-emerald-400 mb-2">
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <h3 className="text-sm font-medium">Al Día</h3>
-          </div>
-          <p className="text-3xl font-bold text-white">{alDia}</p>
+          <p className="text-xs text-slate-500 uppercase tracking-wider font-medium">Mis Alumnos</p>
+          <p className="text-3xl font-bold text-indigo-400 mt-2">{totalMisAlumnos || 0}</p>
+          <p className="text-xs text-slate-500 mt-1">asignados</p>
         </div>
-
         <div className="card p-5">
-          <div className="flex items-center gap-3 text-red-400 mb-2">
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <h3 className="text-sm font-medium">Con Deuda</h3>
-          </div>
-          <p className="text-3xl font-bold text-white">{conDeuda}</p>
+          <p className="text-xs text-slate-500 uppercase tracking-wider font-medium">Con Deuda</p>
+          <p className="text-3xl font-bold text-red-400 mt-2">{alumnosConDeuda}</p>
+          <p className="text-xs text-slate-500 mt-1">alumno(s)</p>
         </div>
-
         <div className="card p-5">
-          <div className="flex items-center gap-3 text-amber-400 mb-2">
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
-            </svg>
-            <h3 className="text-sm font-medium">Riesgo Alto</h3>
-          </div>
-          <p className="text-3xl font-bold text-white">{riesgoAlto}</p>
+          <p className="text-xs text-slate-500 uppercase tracking-wider font-medium">Deuda Total</p>
+          <p className="text-3xl font-bold text-amber-400 mt-2">S/ {deudaTotal.toLocaleString()}</p>
+          <p className="text-xs text-slate-500 mt-1">pendiente</p>
         </div>
       </div>
 
-      <div className="grid md:grid-cols-3 gap-6">
-        {/* Columna principal: Alertas */}
-        <div className="md:col-span-2 space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-white">Alertas Prioritarias</h2>
+      {/* Última importación */}
+      {ultimaImport && (
+        <div className="card p-5">
+          <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-3">Última Importación</h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+            <div>
+              <p className="text-slate-500">Archivo</p>
+              <p className="text-white font-medium truncate">{ultimaImport.nombre_archivo}</p>
+            </div>
+            <div>
+              <p className="text-slate-500">Total filas</p>
+              <p className="text-white font-medium">{ultimaImport.total_filas?.toLocaleString()}</p>
+            </div>
+            <div>
+              <p className="text-slate-500">Procesados</p>
+              <p className="text-emerald-400 font-medium">{ultimaImport.actualizados?.toLocaleString()}</p>
+            </div>
+            <div>
+              <p className="text-slate-500">Duración</p>
+              <p className="text-white font-medium">{ultimaImport.duracion_ms ? `${(ultimaImport.duracion_ms / 1000).toFixed(1)}s` : '—'}</p>
+            </div>
           </div>
-          
-          {alertas.length === 0 ? (
-            <div className="card p-8 text-center border-dashed">
-              <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-emerald-500/10 mb-4">
-                <svg className="w-6 h-6 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 13l4 4L19 7" />
-                </svg>
-              </div>
-              <h3 className="text-slate-200 font-medium mb-1">Todo bajo control</h3>
-              <p className="text-sm text-slate-500">No hay alumnos que requieran atención urgente en este momento.</p>
-            </div>
-          ) : (
-            <div className="card divide-y divide-[#1e2d45]">
-              {alertas.map(al => (
-                <div key={`${al.dni}-${al.grupo}`} className="p-4 hover:bg-[#1a2236] transition-colors flex items-center justify-between gap-4">
-                  <div>
-                    <Link href={`/alumno/${al.dni}?grupo=${encodeURIComponent(al.grupo)}`} className="font-medium text-white hover:text-indigo-400 transition-colors">
-                      {getNombreCompleto(al)}
-                    </Link>
-                    <p className="text-xs text-slate-400 truncate max-w-[200px] md:max-w-md mt-0.5">{al.grupo}</p>
-                  </div>
-                  <div className="flex flex-col items-end gap-1 shrink-0">
-                    {al.deuda_total > 0 && (
-                      <span className="text-xs font-medium text-red-400">Deuda: {formatCurrency(al.deuda_total)}</span>
-                    )}
-                    {al.riesgo_academico === 'alto' && (
-                      <span className={getRiesgoColor('alto').badge + ' px-2 py-0.5 rounded text-[10px]'}>Riesgo Alto</span>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
+      )}
 
-        {/* Columna lateral: Mis Grupos */}
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-white">Mis Grupos ({grupos.length})</h2>
-            <Link href="/grupos" className="text-sm font-medium text-indigo-400 hover:text-indigo-300">Ver todos</Link>
+      {/* Accesos rápidos */}
+      <div className="grid md:grid-cols-3 gap-4">
+        <Link href="/importar" className="card p-6 hover:border-indigo-500/30 transition-all group">
+          <div className="w-10 h-10 rounded-xl bg-indigo-600/20 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+            <svg className="w-5 h-5 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
+            </svg>
           </div>
-          
-          <div className="card divide-y divide-[#1e2d45]">
-            {grupos.length === 0 ? (
-              <div className="p-4 text-center">
-                <p className="text-sm text-slate-500">Aún no has importado alumnos.</p>
-              </div>
-            ) : (
-              grupos.map(g => (
-                <Link 
-                  key={g.nombre} 
-                  href={`/grupos/${encodeURIComponent(g.nombre)}`}
-                  className="p-4 flex items-center justify-between hover:bg-[#1a2236] transition-colors group"
-                >
-                  <div className="flex items-center gap-3 overflow-hidden">
-                    <div className="w-8 h-8 rounded-lg bg-indigo-500/10 flex items-center justify-center shrink-0">
-                      <svg className="w-4 h-4 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                      </svg>
-                    </div>
-                    <p className="text-sm font-medium text-slate-300 group-hover:text-white truncate">{g.nombre}</p>
-                  </div>
-                  <div className="shrink-0 bg-[#0d1626] px-2 py-1 rounded text-xs font-medium text-slate-400 border border-[#1e2d45]">
-                    {g.total}
-                  </div>
-                </Link>
-              ))
-            )}
+          <h3 className="text-white font-semibold">Importar Excel</h3>
+          <p className="text-slate-500 text-sm mt-1">Subir el archivo Control de Pagos</p>
+        </Link>
+
+        <Link href="/mis-alumnos" className="card p-6 hover:border-emerald-500/30 transition-all group">
+          <div className="w-10 h-10 rounded-xl bg-emerald-600/20 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+            <svg className="w-5 h-5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
           </div>
-        </div>
+          <h3 className="text-white font-semibold">Mis Alumnos</h3>
+          <p className="text-slate-500 text-sm mt-1">Agregar o importar mis alumnos asignados</p>
+        </Link>
+
+        <Link href="/control-pagos" className="card p-6 hover:border-amber-500/30 transition-all group">
+          <div className="w-10 h-10 rounded-xl bg-amber-600/20 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+            <svg className="w-5 h-5 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+          </div>
+          <h3 className="text-white font-semibold">Control de Pagos</h3>
+          <p className="text-slate-500 text-sm mt-1">Ver tabla completa de pagos y deudas</p>
+        </Link>
       </div>
     </div>
   )
