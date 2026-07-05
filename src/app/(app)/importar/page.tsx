@@ -2,11 +2,12 @@
 
 import { useState } from 'react'
 import { ImportResult } from '@/lib/types'
-import { formatCurrency } from '@/lib/utils'
+import { parseExcelBuffer } from '@/lib/excel-parser'
 
 export default function ImportarPage() {
   const [file, setFile] = useState<File | null>(null)
   const [loading, setLoading] = useState(false)
+  const [progress, setProgress] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<ImportResult | null>(null)
 
@@ -15,6 +16,7 @@ export default function ImportarPage() {
       setFile(e.target.files[0])
       setError(null)
       setResult(null)
+      setProgress(0)
     }
   }
 
@@ -27,30 +29,76 @@ export default function ImportarPage() {
     setLoading(true)
     setError(null)
     setResult(null)
-
-    const formData = new FormData()
-    formData.append('file', file)
+    setProgress(5) // Start processing
 
     try {
-      const res = await fetch('/api/importar-excel', {
-        method: 'POST',
-        body: formData,
-      })
+      const startTime = Date.now()
+      
+      // 1. Leer el archivo en el navegador
+      const buffer = await file.arrayBuffer()
+      setProgress(15) // File loaded into memory
+      
+      // 2. Parsear el Excel en el navegador (Evita subir 5MB al servidor de golpe)
+      const { rows, total } = await parseExcelBuffer(buffer)
+      setProgress(30) // File parsed
 
-      const data = await res.json()
-
-      if (!res.ok) {
-        throw new Error(data.error || 'Error al importar')
+      if (total === 0) {
+        throw new Error('El archivo no contiene alumnos válidos (no se encontró DNI o Grupo)')
       }
 
-      setResult(data.result)
+      // 3. Enviar a la API en lotes pequeños (Evita el Timeout de 10s de Vercel)
+      const batchSize = 100 // 100 alumnos por petición
+      let procesados = 0
+      let errores = 0
+
+      for (let i = 0; i < rows.length; i += batchSize) {
+        const batch = rows.slice(i, i + batchSize)
+        const isLastBatch = i + batchSize >= rows.length
+        
+        const res = await fetch('/api/importar-excel', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            filename: file.name,
+            rows: batch,
+            isLastBatch,
+            totalRows: total,
+            totalProcesados: procesados,
+            totalErrores: errores,
+            duracionMs: Date.now() - startTime
+          }),
+        })
+
+        const data = await res.json()
+
+        if (!res.ok) {
+          throw new Error(data.error || 'Error al importar un lote')
+        }
+
+        procesados += data.result.procesados
+        errores += data.result.errores
+        
+        // Actualizar barra de progreso (30% to 100%)
+        const percentage = 30 + Math.round(((i + batchSize) / total) * 70)
+        setProgress(Math.min(percentage, 100))
+      }
+
+      const duracion_ms = Date.now() - startTime
+
+      setResult({
+        total,
+        actualizados: procesados,
+        errores,
+        duracion_ms
+      })
+      
       setFile(null)
-      // Reset input
       const fileInput = document.getElementById('file-upload') as HTMLInputElement
       if (fileInput) fileInput.value = ''
       
     } catch (err: any) {
       setError(err.message)
+      setProgress(0)
     } finally {
       setLoading(false)
     }
@@ -90,6 +138,7 @@ export default function ImportarPage() {
             <button
               onClick={() => document.getElementById('file-upload')?.click()}
               className="btn-ghost flex-1 text-sm border border-[#1e2d45]"
+              disabled={loading}
             >
               Seleccionar
             </button>
@@ -98,17 +147,28 @@ export default function ImportarPage() {
               disabled={!file || loading}
               className="btn-primary flex-1 flex items-center justify-center gap-2"
             >
-              {loading ? (
-                <>
-                  <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-                  </svg>
-                  Subiendo
-                </>
-              ) : 'Importar'}
+              {loading ? 'Procesando...' : 'Importar'}
             </button>
           </div>
+          
+          {/* Barra de progreso */}
+          {loading && (
+            <div className="w-full max-w-xs mt-6">
+              <div className="flex justify-between text-xs text-slate-400 mb-1">
+                <span>Progreso</span>
+                <span>{progress}%</span>
+              </div>
+              <div className="w-full bg-[#1e2d45] rounded-full h-2 overflow-hidden">
+                <div 
+                  className="bg-indigo-500 h-2 rounded-full transition-all duration-300 ease-out"
+                  style={{ width: `${progress}%` }}
+                ></div>
+              </div>
+              <p className="text-[10px] text-slate-500 text-center mt-2">
+                {progress < 30 ? 'Leyendo Excel...' : 'Guardando en la base de datos (por lotes)...'}
+              </p>
+            </div>
+          )}
         </div>
       </div>
 
@@ -144,7 +204,7 @@ export default function ImportarPage() {
               <p className="text-xl font-semibold text-white">{result.total}</p>
             </div>
             <div className="bg-[#0a0f1e]/50 rounded-lg p-3 border border-emerald-500/10">
-              <p className="text-xs text-slate-400 mb-1">Actualizados</p>
+              <p className="text-xs text-slate-400 mb-1">Guardados</p>
               <p className="text-xl font-semibold text-white">{result.actualizados}</p>
             </div>
             <div className="bg-[#0a0f1e]/50 rounded-lg p-3 border border-emerald-500/10">
