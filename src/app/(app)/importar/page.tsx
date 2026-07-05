@@ -129,7 +129,7 @@ export default function ImportarPage() {
           <input
             id="file-upload"
             type="file"
-            accept=".xlsx, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            accept=".xlsx, .xls, .csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel, text/csv"
             className="hidden"
             onChange={handleFileChange}
           />
