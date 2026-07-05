@@ -23,8 +23,8 @@ export default async function ControlPagosPage() {
     if (alumnosData) {
       // Combinar datos
       alumnos = misAlumnos.map(ma => {
-        const alumno = alumnosData.find(a => a.dni === ma.dni && a.grupo === ma.grupo)
-        return alumno ? { ...alumno } : { dni: ma.dni, grupo: ma.grupo, ciclo: ma.ciclo, carrera: ma.carrera }
+        const alumno = alumnosData.find(a => a.dni === ma.dni && a.carrera === ma.carrera)
+        return alumno ? { ...alumno, grupo: ma.grupo } : { dni: ma.dni, grupo: ma.grupo, ciclo: ma.ciclo, carrera: ma.carrera }
       })
     }
   }

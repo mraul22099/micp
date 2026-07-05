@@ -31,7 +31,7 @@ export async function POST(request: Request) {
 
       const { error: upsertError } = await supabase
         .from('alumnos')
-        .upsert(rowsToInsert, { onConflict: 'dni,grupo' })
+        .upsert(rowsToInsert, { onConflict: 'dni,carrera' })
 
       if (upsertError) {
         throw upsertError
@@ -48,7 +48,7 @@ export async function POST(request: Request) {
             .upsert({
               ...row,
               ultima_importacion: new Date().toISOString()
-            }, { onConflict: 'dni,grupo' })
+            }, { onConflict: 'dni,carrera' })
           if (error) throw error
           procesados++
         } catch (innerError) {
