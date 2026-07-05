@@ -139,7 +139,7 @@ export async function parseExcelBuffer(buffer: ArrayBuffer): Promise<{ rows: Exc
 
   if (headerIdx === -1) {
     const preview = raw.slice(0, 5).map(r => JSON.stringify(r)).join(' | ');
-    throw new Error(`No se encontró cabecera (buscando celda "Dni"). Muestra: ${preview}`);
+    throw new Error(`No se encontró cabecera. Hojas: ${wb.SheetNames.join(',')}, Total filas detectadas: ${raw.length}, Muestra: ${preview}`);
   }
 
   const headerRow = raw[headerIdx].map(c => typeof c === 'string' ? c.trim().toLowerCase().replace(/\s+/g, '') : '');
