@@ -138,10 +138,12 @@ export async function parseExcelBuffer(buffer: ArrayBuffer): Promise<{ rows: Exc
   }
 
   if (headerIdx === -1) {
-    return { rows: [], total: 0 } // No valid header found
+    const preview = raw.slice(0, 5).map(r => JSON.stringify(r)).join(' | ');
+    throw new Error(`No se encontró cabecera (buscando celda "Dni"). Muestra: ${preview}`);
   }
 
   const headerRow = raw[headerIdx].map(c => typeof c === 'string' ? c.trim().toLowerCase().replace(/\s+/g, '') : '');
+
   
   const getColIdx = (possibleNames: string[]) => {
     const normalizedNames = possibleNames.map(n => n.toLowerCase().replace(/\s+/g, ''));
